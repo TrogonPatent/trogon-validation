@@ -9,7 +9,7 @@ export const config = {
   maxDuration: 300,
 };
 
-async function extractSpecWithClaude(pdfUrl) {
+async function extractSpecWithClaude(pdfUrl, retries = 3) {
   console.log('Fetching PDF for Claude...');
   
   // Fetch PDF
@@ -30,48 +30,73 @@ CRITICAL REQUIREMENTS:
 
 Extract the specification text now:`;
 
-  const response = await fetch('https://api.anthropic.com/v1/messages', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': process.env.ANTHROPIC_API_KEY,
-      'anthropic-version': '2023-06-01',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-20250514',
-      max_tokens: 16000,
-      messages: [
-        {
-          role: 'user',
-          content: [
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      console.log(`Claude API attempt ${attempt}/${retries}...`);
+      
+      const response = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': process.env.ANTHROPIC_API_KEY,
+          'anthropic-version': '2023-06-01',
+        },
+        body: JSON.stringify({
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 16000,
+          messages: [
             {
-              type: 'document',
-              source: {
-                type: 'base64',
-                media_type: 'application/pdf',
-                data: base64Pdf,
-              },
-            },
-            {
-              type: 'text',
-              text: prompt,
+              role: 'user',
+              content: [
+                {
+                  type: 'document',
+                  source: {
+                    type: 'base64',
+                    media_type: 'application/pdf',
+                    data: base64Pdf,
+                  },
+                },
+                {
+                  type: 'text',
+                  text: prompt,
+                },
+              ],
             },
           ],
-        },
-      ],
-    }),
-  });
+        }),
+      });
 
-if (!response.ok) {
-  const error = await response.text();
-  console.error('Claude API response status:', response.status);
-  console.error('Claude API error body:', error);
-  console.error('Claude API headers:', JSON.stringify([...response.headers.entries()]));
-  throw new Error(`Claude API error (${response.status}): ${error}`);
-}
+      if (response.ok) {
+        const data = await response.json();
+        console.log('Claude API success!');
+        return data.content[0].text;
+      }
 
-  const data = await response.json();
-  return data.content[0].text;
+      // Check if we should retry
+      const shouldRetry = response.headers.get('x-should-retry') === 'true';
+      const status = response.status;
+      
+      if (shouldRetry && attempt < retries) {
+        const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
+        console.log(`Claude overloaded (${status}), retrying in ${waitTime/1000}s...`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+        continue;
+      }
+
+      // If not retryable or last attempt, throw error
+      const error = await response.text();
+      throw new Error(`Claude API error (${status}): ${error}`);
+      
+    } catch (error) {
+      if (attempt === retries) {
+        throw error;
+      }
+      // On network errors, also retry
+      const waitTime = Math.pow(2, attempt) * 1000;
+      console.log(`Error on attempt ${attempt}, retrying in ${waitTime/1000}s...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+  }
 }
 
 async function extractDrawings(pdfUrl) {
