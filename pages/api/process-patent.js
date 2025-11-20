@@ -9,10 +9,13 @@ export const config = {
   maxDuration: 300,
 };
 
+// Crop amount from top of page (in points, 72 points = 1 inch)
+// 55 points ≈ 0.76 inches - covers standard USPTO header
+const HEADER_CROP_POINTS = 55;
+
 async function extractSpecWithClaude(pdfUrl, retries = 3) {
   console.log('Fetching PDF for Claude...');
   
-  // Fetch PDF
   const pdfResponse = await fetch(pdfUrl);
   const pdfBuffer = await pdfResponse.arrayBuffer();
   const base64Pdf = Buffer.from(pdfBuffer).toString('base64');
@@ -72,18 +75,16 @@ Extract the specification text now:`;
         return data.content[0].text;
       }
 
-      // Check if we should retry
       const shouldRetry = response.headers.get('x-should-retry') === 'true';
       const status = response.status;
       
       if (shouldRetry && attempt < retries) {
-        const waitTime = Math.pow(2, attempt) * 1000; // Exponential backoff: 2s, 4s, 8s
+        const waitTime = Math.pow(2, attempt) * 1000;
         console.log(`Claude overloaded (${status}), retrying in ${waitTime/1000}s...`);
         await new Promise(resolve => setTimeout(resolve, waitTime));
         continue;
       }
 
-      // If not retryable or last attempt, throw error
       const error = await response.text();
       throw new Error(`Claude API error (${status}): ${error}`);
       
@@ -91,7 +92,6 @@ Extract the specification text now:`;
       if (attempt === retries) {
         throw error;
       }
-      // On network errors, also retry
       const waitTime = Math.pow(2, attempt) * 1000;
       console.log(`Error on attempt ${attempt}, retrying in ${waitTime/1000}s...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
@@ -99,40 +99,57 @@ Extract the specification text now:`;
   }
 }
 
-async function extractDrawings(pdfUrl) {
+async function getPdfPageCount(pdfUrl) {
+  const pdfResponse = await fetch(pdfUrl);
+  const pdfBuffer = await pdfResponse.arrayBuffer();
+  const pdfDoc = await PDFDocument.load(pdfBuffer);
+  return pdfDoc.getPageCount();
+}
+
+async function extractDrawings(pdfUrl, startPage, endPage) {
   console.log('Fetching PDF for drawing extraction...');
   
-  // Fetch PDF
   const pdfResponse = await fetch(pdfUrl);
   const pdfBuffer = await pdfResponse.arrayBuffer();
   
-  // Load PDF
   const pdfDoc = await PDFDocument.load(pdfBuffer);
   const totalPages = pdfDoc.getPageCount();
   
   console.log(`PDF has ${totalPages} pages`);
   
-  // Create new PDF for drawings
+  // Validate page range (user provides 1-indexed pages)
+  const start = Math.max(0, startPage - 1);
+  const end = Math.min(totalPages - 1, endPage - 1);
+  
+  if (start > end || start >= totalPages) {
+    throw new Error(`Invalid page range: ${startPage}-${endPage} (PDF has ${totalPages} pages)`);
+  }
+  
+  console.log(`Extracting pages ${startPage} to ${endPage} (0-indexed: ${start} to ${end})`);
+  
   const drawingsPdf = await PDFDocument.create();
   
-  // Heuristic: Drawings typically start after first few pages
-  const startPage = Math.floor(totalPages * 0.4);
-  
-  console.log(`Extracting drawing pages from page ${startPage + 1} to ${totalPages}`);
-  
-  for (let i = startPage; i < totalPages; i++) {
+  for (let i = start; i <= end; i++) {
     const [page] = await drawingsPdf.copyPages(pdfDoc, [i]);
+    
+    // Crop header from top of page
+    const { width, height } = page.getSize();
+    
+    // CropBox excludes the top header area (USPTO patent number, date, sheet info)
+    page.setCropBox(0, 0, width, height - HEADER_CROP_POINTS);
+    
     drawingsPdf.addPage(page);
   }
   
   const drawingsPdfBytes = await drawingsPdf.save();
   const drawingPageCount = drawingsPdf.getPageCount();
   
-  console.log(`Extracted ${drawingPageCount} drawing pages`);
+  console.log(`Extracted ${drawingPageCount} drawing pages with headers cropped (${HEADER_CROP_POINTS}pt from top)`);
   
   return {
     pdfBuffer: Buffer.from(drawingsPdfBytes),
     pageCount: drawingPageCount,
+    totalPages: totalPages,
   };
 }
 
@@ -142,7 +159,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { patentId } = req.body;
+    const { patentId, drawingStartPage, drawingEndPage } = req.body;
 
     if (!patentId) {
       return res.status(400).json({ error: 'Patent ID required' });
@@ -150,7 +167,6 @@ export default async function handler(req, res) {
 
     console.log(`Processing patent ID: ${patentId}`);
 
-    // Get patent from database
     const sql = neon(process.env.DATABASE_URL);
     
     const patents = await sql`
@@ -168,6 +184,10 @@ export default async function handler(req, res) {
     console.log(`Processing patent: ${patent.patent_number}`);
     console.log(`PDF URL: ${patent.raw_pdf_url}`);
 
+    // Get total page count first
+    const totalPages = await getPdfPageCount(patent.raw_pdf_url);
+    console.log(`Total pages in PDF: ${totalPages}`);
+
     // Step 1: Extract spec text with Claude
     console.log('Extracting specification text with Claude...');
     const specText = await extractSpecWithClaude(patent.raw_pdf_url);
@@ -184,20 +204,31 @@ export default async function handler(req, res) {
     );
     console.log(`Spec uploaded: ${specBlob.url}`);
 
-    // Step 2: Extract drawings
-    console.log('Extracting drawings...');
-    const { pdfBuffer, pageCount } = await extractDrawings(patent.raw_pdf_url);
-
-    // Upload drawings PDF to blob
-    const drawingsBlob = await put(
-      `patents/drawings/${patent.patent_number}-drawings.pdf`,
-      pdfBuffer,
-      {
-        access: 'public',
-        contentType: 'application/pdf',
-      }
-    );
-    console.log(`Drawings uploaded: ${drawingsBlob.url}`);
+    // Step 2: Extract drawings only if page range provided
+    let drawingsBlob = null;
+    let pageCount = 0;
+    
+    if (drawingStartPage && drawingEndPage) {
+      console.log(`Extracting drawings from pages ${drawingStartPage}-${drawingEndPage}...`);
+      const drawingsResult = await extractDrawings(
+        patent.raw_pdf_url, 
+        drawingStartPage, 
+        drawingEndPage
+      );
+      
+      drawingsBlob = await put(
+        `patents/drawings/${patent.patent_number}-drawings.pdf`,
+        drawingsResult.pdfBuffer,
+        {
+          access: 'public',
+          contentType: 'application/pdf',
+        }
+      );
+      pageCount = drawingsResult.pageCount;
+      console.log(`Drawings uploaded: ${drawingsBlob.url}`);
+    } else {
+      console.log('No drawing page range specified - drawings need separate extraction');
+    }
 
     // Update database
     await sql`
@@ -205,8 +236,9 @@ export default async function handler(req, res) {
       SET 
         spec_txt_url = ${specBlob.url},
         spec_text = ${specText},
-        drawing_pdf_url = ${drawingsBlob.url},
+        drawing_pdf_url = ${drawingsBlob?.url || null},
         drawing_page_count = ${pageCount},
+        total_page_count = ${totalPages},
         processed_at = NOW(),
         updated_at = NOW()
       WHERE id = ${patentId}
@@ -218,9 +250,11 @@ export default async function handler(req, res) {
       success: true,
       patentNumber: patent.patent_number,
       specUrl: specBlob.url,
-      drawingsUrl: drawingsBlob.url,
+      drawingsUrl: drawingsBlob?.url || null,
       specLength: specText.length,
       drawingPageCount: pageCount,
+      totalPages: totalPages,
+      needsDrawingSelection: !drawingsBlob,
     });
 
   } catch (error) {
