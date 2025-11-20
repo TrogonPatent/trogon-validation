@@ -1,0 +1,13 @@
+{
+  "framework": "nextjs",
+  "buildCommand": "next build",
+  "devCommand": "next dev",
+  "installCommand": "npm install",
+  "regions": ["iad1"],
+  "functions": {
+    "pages/api/**/*.js": {
+      "maxDuration": 300,
+      "memory": 3008
+    }
+  }
+}
