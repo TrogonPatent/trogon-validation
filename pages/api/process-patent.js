@@ -62,10 +62,13 @@ Extract the specification text now:`;
     }),
   });
 
-  if (!response.ok) {
-    const error = await response.text();
-    throw new Error(`Claude API error: ${error}`);
-  }
+if (!response.ok) {
+  const error = await response.text();
+  console.error('Claude API response status:', response.status);
+  console.error('Claude API error body:', error);
+  console.error('Claude API headers:', JSON.stringify([...response.headers.entries()]));
+  throw new Error(`Claude API error (${response.status}): ${error}`);
+}
 
   const data = await response.json();
   return data.content[0].text;
