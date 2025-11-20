@@ -10,7 +10,16 @@ export const config = {
 };
 
 async function extractSpecWithClaude(pdfUrl) {
-  const prompt = `You are extracting the specification text from a patent PDF for prior art analysis. Your task is to extract ONLY the specification sections, removing all headers, footers, and metadata.
+  console.log('Fetching PDF for Claude...');
+  
+  // Fetch PDF
+  const pdfResponse = await fetch(pdfUrl);
+  const pdfBuffer = await pdfResponse.arrayBuffer();
+  const base64Pdf = Buffer.from(pdfBuffer).toString('base64');
+  
+  console.log(`PDF fetched: ${pdfBuffer.byteLength} bytes`);
+
+  const prompt = `Extract the specification text from this patent PDF for prior art analysis.
 
 CRITICAL REQUIREMENTS:
 1. Remove ALL headers and footers from every page (patent numbers, dates, page numbers, "United States Patent", etc.)
@@ -19,9 +28,7 @@ CRITICAL REQUIREMENTS:
 4. Output clean plain text with no formatting, no metadata
 5. Do not include: Claims, patent metadata, examiner names, filing dates, or any header/footer content
 
-The PDF is available at: ${pdfUrl}
-
-Extract the specification text now, removing all headers and footers:`;
+Extract the specification text now:`;
 
   const response = await fetch('https://api.anthropic.com/v1/messages', {
     method: 'POST',
@@ -36,7 +43,20 @@ Extract the specification text now, removing all headers and footers:`;
       messages: [
         {
           role: 'user',
-          content: prompt,
+          content: [
+            {
+              type: 'document',
+              source: {
+                type: 'base64',
+                media_type: 'application/pdf',
+                data: base64Pdf,
+              },
+            },
+            {
+              type: 'text',
+              text: prompt,
+            },
+          ],
         },
       ],
     }),
@@ -68,11 +88,9 @@ async function extractDrawings(pdfUrl) {
   const drawingsPdf = await PDFDocument.create();
   
   // Heuristic: Drawings typically start after first few pages
-  // and have minimal text (just figure numbers)
-  // For now, take pages from middle to end (common patent structure)
-  const startPage = Math.floor(totalPages * 0.4); // Start at 40% through doc
+  const startPage = Math.floor(totalPages * 0.4);
   
-  console.log(`Extracting drawing pages from page ${startPage} to ${totalPages}`);
+  console.log(`Extracting drawing pages from page ${startPage + 1} to ${totalPages}`);
   
   for (let i = startPage; i < totalPages; i++) {
     const [page] = await drawingsPdf.copyPages(pdfDoc, [i]);
