@@ -22,14 +22,29 @@ async function extractSpecWithClaude(pdfUrl, retries = 3) {
   
   console.log(`PDF fetched: ${pdfBuffer.byteLength} bytes`);
 
-  const prompt = `Extract the specification text from this patent PDF for prior art analysis.
+const prompt = `Extract ONLY the specification text from this patent PDF. 
 
-CRITICAL REQUIREMENTS:
-1. Remove ALL headers and footers from every page (patent numbers, dates, page numbers, "United States Patent", etc.)
-2. Extract these sections ONLY: Abstract, Background, Summary, Detailed Description
-3. STOP IMMEDIATELY before "What is claimed" or "Claims" section
-4. Output clean plain text with no formatting, no metadata
-5. Do not include: Claims, patent metadata, examiner names, filing dates, or any header/footer content
+CRITICAL - WHAT TO INCLUDE:
+- Abstract
+- Background (may be called "Background of the Invention" or "Background Art")
+- Summary (may be called "Summary of the Invention")  
+- Detailed Description (may be called "Detailed Description of the Invention" or "Description of Embodiments")
+- Brief Description of Drawings
+
+CRITICAL - WHAT TO EXCLUDE:
+- ALL headers and footers (patent numbers, dates, page numbers, "United States Patent", sheet numbers)
+- ALL claims - anything starting with "What is claimed" or "Claims"
+- ALL numbered claims (1., 2., 3., etc. that describe legal claim language)
+- Patent metadata, examiner names, filing dates, inventor names, assignee
+- Any text that starts with a number followed by a period and describes "A method...", "A system...", "A device...", "An apparatus...", "A non-transitory computer-readable..."
+
+STOP EXTRACTION when you see:
+- "What is claimed is:" or "What is claimed:"
+- "Claims" as a section header
+- Numbered paragraphs (1., 2., 3.) that read like legal claims
+- Text patterns like "1. A method for...", "1. A system comprising...", "1. An apparatus..."
+
+Output clean plain text only. No formatting, no metadata.
 
 Extract the specification text now:`;
 
