@@ -10,11 +10,9 @@ export const config = {
 async function sendToHuntAPI(specUrl, drawingsUrl) {
   console.log('Fetching spec and drawings files...');
   
-  // Fetch spec text
   const specResponse = await fetch(specUrl);
   const specText = await specResponse.text();
   
-  // Fetch drawings PDF
   const drawingsResponse = await fetch(drawingsUrl);
   const drawingsBuffer = await drawingsResponse.arrayBuffer();
   
@@ -22,7 +20,6 @@ async function sendToHuntAPI(specUrl, drawingsUrl) {
   console.log(`Drawings size: ${drawingsBuffer.byteLength} bytes`);
   
   // Create multipart form data with ANONYMOUS filenames
-  // No patent number to avoid biasing Hunt's analysis
   const boundary = `----WebKitFormBoundary${Math.random().toString(36).substring(2)}`;
   
   const parts = [];
@@ -49,10 +46,9 @@ async function sendToHuntAPI(specUrl, drawingsUrl) {
     Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8')
   ]);
   
-  console.log('Sending to Hunt API with anonymous filenames...');
-  
-  // Send to Hunt
-  const huntResponse = await fetch('https://monitoring.trogonpatent.ai/api/upload-provisional', {
+  // STEP 1: Upload to Hunt
+  console.log('Step 1: Uploading to Hunt...');
+  const uploadResponse = await fetch('https://monitoring.trogonpatent.ai/api/upload-provisional', {
     method: 'POST',
     headers: {
       'Content-Type': `multipart/form-data; boundary=${boundary}`,
@@ -60,15 +56,57 @@ async function sendToHuntAPI(specUrl, drawingsUrl) {
     body: body,
   });
   
-  if (!huntResponse.ok) {
-    const errorText = await huntResponse.text();
-    throw new Error(`Hunt API error: ${huntResponse.status} - ${errorText}`);
+  if (!uploadResponse.ok) {
+    const errorText = await uploadResponse.text();
+    throw new Error(`Hunt upload error: ${uploadResponse.status} - ${errorText}`);
   }
   
-  const huntData = await huntResponse.json();
-  console.log('Hunt response:', JSON.stringify(huntData, null, 2));
+  const uploadData = await uploadResponse.json();
+  console.log('Upload response:', JSON.stringify(uploadData, null, 2));
   
-  return huntData;
+  const applicationId = uploadData.id;
+  if (!applicationId) {
+    throw new Error('No application ID returned from Hunt');
+  }
+  
+  // STEP 2: Classify (extract PODs and predict CPC)
+  console.log('Step 2: Classifying...');
+  const classifyResponse = await fetch('https://monitoring.trogonpatent.ai/api/classify-provisional', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ applicationId }),
+  });
+  
+  if (!classifyResponse.ok) {
+    const errorText = await classifyResponse.text();
+    console.error(`Classify error: ${classifyResponse.status} - ${errorText}`);
+    // Don't throw - upload succeeded, classification failed
+  } else {
+    const classifyData = await classifyResponse.json();
+    console.log('Classify response:', JSON.stringify(classifyData, null, 2));
+  }
+  
+  // STEP 3: Save to Hunt database
+  console.log('Step 3: Saving...');
+  const saveResponse = await fetch('https://monitoring.trogonpatent.ai/api/save-provisional', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ applicationId }),
+  });
+  
+  if (!saveResponse.ok) {
+    const errorText = await saveResponse.text();
+    console.error(`Save error: ${saveResponse.status} - ${errorText}`);
+  } else {
+    const saveData = await saveResponse.json();
+    console.log('Save response:', JSON.stringify(saveData, null, 2));
+  }
+  
+  return { id: applicationId, ...uploadData };
 }
 
 export default async function handler(req, res) {
@@ -106,16 +144,12 @@ export default async function handler(req, res) {
     }
 
     console.log(`Sending ${patent.patent_number} to Hunt (anonymized)...`);
-    console.log(`Spec URL: ${patent.spec_txt_url}`);
-    console.log(`Drawings URL: ${patent.drawing_pdf_url}`);
 
-    // Send to Hunt with anonymous filenames
     const huntData = await sendToHuntAPI(
       patent.spec_txt_url,
       patent.drawing_pdf_url
     );
 
-    // Update database with Hunt application ID
     await sql`
       UPDATE patents
       SET 
@@ -124,7 +158,7 @@ export default async function handler(req, res) {
       WHERE id = ${patentId}
     `;
 
-    console.log(`Hunt application created: ${huntData.id || 'unknown'}`);
+    console.log(`Hunt application created: ${huntData.id}`);
 
     return res.status(200).json({
       success: true,
