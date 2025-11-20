@@ -275,7 +275,7 @@ export default function ValidationPage() {
               </td>
               <td>
                 {patent.ground_truth_claims ? (
-                  
+                  <a
                     href={`data:text/plain;charset=utf-8,${encodeURIComponent(generateGTText(patent))}`}
                     download={`${patent.patent_number}-GT.txt`}
                     style={{ fontSize: '12px' }}
