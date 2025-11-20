@@ -7,7 +7,7 @@ export const config = {
   maxDuration: 300,
 };
 
-async function sendToHuntAPI(specUrl, drawingsUrl, patentNumber) {
+async function sendToHuntAPI(specUrl, drawingsUrl) {
   console.log('Fetching spec and drawings files...');
   
   // Fetch spec text
@@ -21,23 +21,24 @@ async function sendToHuntAPI(specUrl, drawingsUrl, patentNumber) {
   console.log(`Spec size: ${specText.length} chars`);
   console.log(`Drawings size: ${drawingsBuffer.byteLength} bytes`);
   
-  // Create multipart form data
+  // Create multipart form data with ANONYMOUS filenames
+  // No patent number to avoid biasing Hunt's analysis
   const boundary = `----WebKitFormBoundary${Math.random().toString(36).substring(2)}`;
   
   const parts = [];
   
-  // Add spec.txt file
+  // Add spec.txt file - ANONYMOUS filename
   parts.push(
     `--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="file"; filename="${patentNumber}-spec.txt"\r\n` +
+    `Content-Disposition: form-data; name="file"; filename="spec.txt"\r\n` +
     `Content-Type: text/plain\r\n\r\n` +
     `${specText}\r\n`
   );
   
-  // Add drawings.pdf file
+  // Add drawings.pdf file - ANONYMOUS filename
   parts.push(
     `--${boundary}\r\n` +
-    `Content-Disposition: form-data; name="file"; filename="${patentNumber}-drawings.pdf"\r\n` +
+    `Content-Disposition: form-data; name="file"; filename="drawings.pdf"\r\n` +
     `Content-Type: application/pdf\r\n\r\n`
   );
   
@@ -48,7 +49,7 @@ async function sendToHuntAPI(specUrl, drawingsUrl, patentNumber) {
     Buffer.from(`\r\n--${boundary}--\r\n`, 'utf8')
   ]);
   
-  console.log('Sending to Hunt API...');
+  console.log('Sending to Hunt API with anonymous filenames...');
   
   // Send to Hunt
   const huntResponse = await fetch('https://monitoring.trogonpatent.ai/api/upload-provisional', {
@@ -84,7 +85,6 @@ export default async function handler(req, res) {
 
     console.log(`Sending patent ID ${patentId} to Hunt...`);
 
-    // Get patent from database
     const sql = neon(process.env.DATABASE_URL);
     
     const patents = await sql`
@@ -100,18 +100,19 @@ export default async function handler(req, res) {
     const patent = patents[0];
 
     if (!patent.spec_txt_url || !patent.drawing_pdf_url) {
-      return res.status(400).json({ error: 'Patent must be processed first' });
+      return res.status(400).json({ 
+        error: 'Patent must be fully processed first (spec and drawings required)' 
+      });
     }
 
-    console.log(`Sending ${patent.patent_number} to Hunt...`);
+    console.log(`Sending ${patent.patent_number} to Hunt (anonymized)...`);
     console.log(`Spec URL: ${patent.spec_txt_url}`);
     console.log(`Drawings URL: ${patent.drawing_pdf_url}`);
 
-    // Send to Hunt
+    // Send to Hunt with anonymous filenames
     const huntData = await sendToHuntAPI(
       patent.spec_txt_url,
-      patent.drawing_pdf_url,
-      patent.patent_number
+      patent.drawing_pdf_url
     );
 
     // Update database with Hunt application ID
