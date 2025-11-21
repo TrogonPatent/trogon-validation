@@ -69,14 +69,18 @@ async function sendToHuntAPI(specUrl, drawingsUrl) {
     throw new Error('No application ID returned from Hunt');
   }
   
-  // STEP 2: Classify (extract PODs and predict CPC)
+// STEP 2: Classify (extract PODs and predict CPC)
   console.log('Step 2: Classifying...');
   const classifyResponse = await fetch('https://monitoring.trogonpatent.ai/api/classify-provisional', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ applicationId }),
+    body: JSON.stringify({ 
+      applicationId,
+      specText: uploadData.extractedText || specText,
+      title: uploadData.title || 'Untitled Application'
+    }),
   });
   
   if (!classifyResponse.ok) {
