@@ -87,8 +87,11 @@ async function sendToHuntAPI(specUrl, drawingsUrl) {
     const errorText = await classifyResponse.text();
     console.error(`Classify error: ${classifyResponse.status} - ${errorText}`);
     // Don't throw - upload succeeded, classification failed
-  } else {
-    const classifyData = await classifyResponse.json();
+}
+  
+  let classifyData = null;
+  if (classifyResponse.ok) {
+    classifyData = await classifyResponse.json();
     console.log('Classify response:', JSON.stringify(classifyData, null, 2));
   }
   
