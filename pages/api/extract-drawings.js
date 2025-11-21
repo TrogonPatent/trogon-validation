@@ -9,7 +9,7 @@ export const config = {
   maxDuration: 60,
 };
 
-const HEADER_CROP_POINTS = 55;
+const HEADER_CROP_POINTS = 72;
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') {
