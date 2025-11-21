@@ -92,14 +92,30 @@ async function sendToHuntAPI(specUrl, drawingsUrl) {
     console.log('Classify response:', JSON.stringify(classifyData, null, 2));
   }
   
-  // STEP 3: Save to Hunt database
+// STEP 3: Save to Hunt database
   console.log('Step 3: Saving...');
+  
+  // Transform PODs from classify response to save format
+  const approvedPods = classifyData?.pods?.map(pod => ({
+    text: pod.pod_text,
+    rationale: pod.rationale,
+    isPrimary: pod.is_primary,
+    suggested: true
+  })) || [];
+  
   const saveResponse = await fetch('https://monitoring.trogonpatent.ai/api/save-provisional', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ applicationId }),
+    body: JSON.stringify({ 
+      applicationId,
+      title: uploadData.title,
+      cpcPredictions: classifyData?.cpcPredictions || [],
+      primaryCpc: classifyData?.primaryCpc,
+      technologyArea: classifyData?.technologyArea,
+      approvedPods
+    }),
   });
   
   if (!saveResponse.ok) {
