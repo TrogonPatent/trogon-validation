@@ -10,6 +10,8 @@ export default function ValidationPage() {
   const [editSpecText, setEditSpecText] = useState('');
   const [savingSpec, setSavingSpec] = useState(false);
   const [comparingPatent, setComparingPatent] = useState(null);
+  const [comparisonScores, setComparisonScores] = useState(null);
+  const [scoring, setScoring] = useState(false);
 
   useEffect(() => {
     loadPatents();
@@ -195,6 +197,70 @@ export default function ValidationPage() {
       setSavingSpec(false);
     }
   }
+
+async function openComparison(patent) {
+    setComparingPatent(patent);
+    setComparisonScores(null);
+    setScoring(true);
+    
+    try {
+      const res = await fetch('/api/score-comparison', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gtClaims: patent.ground_truth_claims,
+          gtCpc: patent.ground_truth_cpc,
+          huntPods: patent.hunt_extracted_pods,
+          huntCpc: patent.hunt_predicted_cpc,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setComparisonScores(data);
+      }
+    } catch (error) {
+      console.error('Scoring error:', error);
+    } finally {
+      setScoring(false);
+    }
+  }
+
+  function getAggregateStats() {
+    const compared = patents.filter(p => p.hunt_extracted_pods && p.ground_truth_claims);
+    if (compared.length === 0) return null;
+    
+    const cpcMatches = compared.filter(p => 
+      p.ground_truth_cpc?.primary === p.hunt_predicted_cpc?.primary
+    ).length;
+    
+    return {
+      total: patents.length,
+      compared: compared.length,
+      cpcMatchRate: Math.round((cpcMatches / compared.length) * 100),
+    };
+  }
+
+  function exportResults() {
+    const compared = patents.filter(p => p.hunt_extracted_pods && p.ground_truth_claims);
+    const results = compared.map(p => ({
+      patentNumber: p.patent_number,
+      gtCpc: p.ground_truth_cpc,
+      huntCpc: p.hunt_predicted_cpc,
+      cpcMatch: p.ground_truth_cpc?.primary === p.hunt_predicted_cpc?.primary,
+      gtClaimsCount: p.ground_truth_claims?.independent?.length || 0,
+      huntPodsCount: p.hunt_extracted_pods?.length || 0,
+      gtClaims: p.ground_truth_claims?.independent,
+      huntPods: p.hunt_extracted_pods,
+    }));
+    
+    const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `validation-results-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
   
 function getStatus(patent) {
     if (patent.hunt_extracted_pods) return '✅ Ready to Compare';
@@ -216,6 +282,27 @@ function getStatus(patent) {
     <div style={{ padding: '20px', fontFamily: 'system-ui', maxWidth: '1400px', margin: '0 auto' }}>
       <h1>Trogon Validation</h1>
       <p>Upload patents → Process → Select Drawing Pages → Extract GT → Send to Hunt → Compare</p>
+
+      {getAggregateStats() && (
+        <div style={{ backgroundColor: '#f0f9ff', border: '1px solid #0ea5e9', borderRadius: '8px', padding: '16px', marginBottom: '20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: '32px' }}>
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0369a1' }}>{getAggregateStats().compared}/{getAggregateStats().total}</div>
+              <div style={{ fontSize: '12px', color: '#666' }}>Patents Compared</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0369a1' }}>{getAggregateStats().cpcMatchRate}%</div>
+              <div style={{ fontSize: '12px', color: '#666' }}>CPC Primary Match</div>
+            </div>
+          </div>
+          <button
+            onClick={exportResults}
+            style={{ padding: '8px 16px', backgroundColor: '#0369a1', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            📥 Export JSON
+          </button>
+        </div>
+      )}
 
       <div style={{ border: '2px dashed #ccc', padding: '20px', marginBottom: '20px', borderRadius: '8px' }}>
         <input
@@ -366,7 +453,7 @@ function getStatus(patent) {
                 )}
                 {patent.hunt_extracted_pods && (
                   <button 
-                    onClick={() => setComparingPatent(patent)}
+                    onClick={() => openComparison(patent)}
                     style={{ padding: '4px 8px', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '4px' }}
                   >
                     📊 Compare
@@ -430,6 +517,37 @@ function getStatus(patent) {
               </button>
             </div>
             <div style={{ padding: '16px' }}>
+              {scoring && (
+                <div style={{ textAlign: 'center', padding: '20px', marginBottom: '20px' }}>
+                  <div style={{ display: 'inline-block', animation: 'spin 1s linear infinite', fontSize: '24px' }}>⏳</div>
+                  <p style={{ margin: '8px 0 0 0', color: '#666' }}>Scoring with Claude...</p>
+                </div>
+              )}
+              
+              {comparisonScores && (
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                  <div style={{ backgroundColor: '#fef3c7', padding: '16px', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                    <h3 style={{ margin: '0 0 8px 0', color: '#92400e' }}>CPC Score</h3>
+                    <div style={{ fontSize: '32px', fontWeight: 'bold', color: comparisonScores.cpcScore.primaryMatch ? '#059669' : '#dc2626' }}>
+                      {comparisonScores.cpcScore.percentage}%
+                    </div>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#666' }}>
+                      {comparisonScores.cpcScore.primaryMatch ? '✅ Primary match' : comparisonScores.cpcScore.primaryInTop3 ? '⚠️ Primary in top 3' : '❌ No primary match'}
+                      {comparisonScores.cpcScore.overlapCount > 0 && ` • ${comparisonScores.cpcScore.overlapCount} code overlap`}
+                    </p>
+                  </div>
+                  <div style={{ backgroundColor: '#fef3c7', padding: '16px', borderRadius: '8px', border: '1px solid #fcd34d' }}>
+                    <h3 style={{ margin: '0 0 8px 0', color: '#92400e' }}>POD Score</h3>
+                    <div style={{ fontSize: '32px', fontWeight: 'bold', color: comparisonScores.podScore.score >= 70 ? '#059669' : comparisonScores.podScore.score >= 50 ? '#d97706' : '#dc2626' }}>
+                      {comparisonScores.podScore.score}%
+                    </div>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '12px', color: '#666' }}>
+                      {comparisonScores.podScore.rationale}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
                 <div style={{ backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1px solid #86efac' }}>
                   <h3 style={{ margin: '0 0 12px 0', color: '#166534' }}>Ground Truth CPC</h3>
