@@ -9,6 +9,7 @@ export default function Home() {
   const [authenticated, setAuthenticated] = useState(false);
   const [passcode, setPasscode] = useState('');
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
     const stored = sessionStorage.getItem('validation_auth');
@@ -49,22 +50,42 @@ export default function Home() {
         <h1 style={{ margin: '0 0 8px 0', fontSize: '24px' }}>Trogon Validation</h1>
         <p style={{ margin: '0 0 24px 0', color: '#666', fontSize: '14px' }}>Enter passcode to continue</p>
         <form onSubmit={handleSubmit}>
-          <input
-            type="password"
-            value={passcode}
-            onChange={(e) => setPasscode(e.target.value)}
-            placeholder="Passcode"
-            style={{
-              width: '100%',
-              padding: '12px',
-              fontSize: '16px',
-              border: '1px solid #ccc',
-              borderRadius: '4px',
-              marginBottom: '12px',
-              boxSizing: 'border-box'
-            }}
-            autoFocus
-          />
+          <div style={{ position: 'relative', marginBottom: '12px' }}>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={passcode}
+              onChange={(e) => setPasscode(e.target.value)}
+              placeholder="Passcode"
+              style={{
+                width: '100%',
+                padding: '12px',
+                paddingRight: '44px',
+                fontSize: '16px',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                boxSizing: 'border-box'
+              }}
+              autoFocus
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              style={{
+                position: 'absolute',
+                right: '8px',
+                top: '50%',
+                transform: 'translateY(-50%)',
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                fontSize: '18px',
+                padding: '4px'
+              }}
+              title={showPassword ? 'Hide' : 'Show'}
+            >
+              {showPassword ? '🙈' : '👁️'}
+            </button>
+          </div>
           {error && <p style={{ color: '#c00', margin: '0 0 12px 0', fontSize: '14px' }}>{error}</p>}
           <button
             type="submit"
