@@ -24,6 +24,7 @@ export default async function handler(req, res) {
         hunt_application_id,
         hunt_predicted_cpc,
         hunt_extracted_pods,
+        comparison_scores,
         created_at,
         processed_at
       FROM patents
