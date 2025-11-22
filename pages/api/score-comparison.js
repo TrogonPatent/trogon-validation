@@ -1,3 +1,5 @@
+import { neon } from '@neondatabase/serverless';
+
 export const config = {
   maxDuration: 60,
 };
@@ -7,8 +9,10 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  try {
-    const { gtClaims, gtCpc, huntPods, huntCpc } = req.body;
+try {
+    const { patentId, gtClaims, gtCpc, huntPods, huntCpc } = req.body;
+    
+    const sql = neon(process.env.DATABASE_URL);
 
     // CPC Scoring (programmatic)
     const cpcScore = {
@@ -25,10 +29,21 @@ export default async function handler(req, res) {
     // POD Scoring (Claude)
     const podScore = await scorePODsWithClaude(gtClaims, huntPods);
 
+const scores = { cpcScore, podScore, scoredAt: new Date().toISOString() };
+    
+    // Save to DB
+    if (patentId) {
+      await sql`
+        UPDATE patents
+        SET comparison_scores = ${JSON.stringify(scores)},
+            updated_at = NOW()
+        WHERE id = ${patentId}
+      `;
+    }
+
     return res.status(200).json({
       success: true,
-      cpcScore,
-      podScore,
+      ...scores,
     });
 
   } catch (error) {
