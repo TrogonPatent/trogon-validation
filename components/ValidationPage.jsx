@@ -260,8 +260,10 @@ async function openComparison(patent) {
       cpcMatch: p.ground_truth_cpc?.primary === p.hunt_predicted_cpc?.primary,
       gtClaimsCount: p.ground_truth_claims?.independent?.length || 0,
       huntPodsCount: p.hunt_extracted_pods?.length || 0,
-      gtClaims: p.ground_truth_claims?.independent,
-      huntPods: p.hunt_extracted_pods,
+     gtClaims: p.ground_truth_claims?.independent,
+  huntPods: p.hunt_extracted_pods,
+  scores: p.comparison_scores,
+}));
     }));
     
     const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
