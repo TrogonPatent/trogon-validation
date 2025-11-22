@@ -263,7 +263,6 @@ async function openComparison(patent) {
      gtClaims: p.ground_truth_claims?.independent,
   huntPods: p.hunt_extracted_pods,
   scores: p.comparison_scores,
-}));
     }));
     
     const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
