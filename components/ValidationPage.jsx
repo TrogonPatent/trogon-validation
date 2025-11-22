@@ -236,18 +236,21 @@ async function openComparison(patent) {
     }
   }
 
-  function getAggregateStats() {
-    const compared = patents.filter(p => p.hunt_extracted_pods && p.ground_truth_claims);
+ function getAggregateStats() {
+    const compared = patents.filter(p => p.comparison_scores);
     if (compared.length === 0) return null;
     
-    const cpcMatches = compared.filter(p => 
-      p.ground_truth_cpc?.primary === p.hunt_predicted_cpc?.primary
-    ).length;
+    const cpcScores = compared.map(p => p.comparison_scores?.cpcScore?.percentage || 0);
+    const avgCpcScore = Math.round(cpcScores.reduce((a, b) => a + b, 0) / cpcScores.length);
+    
+    const podScores = compared.map(p => p.comparison_scores?.podScore?.score || 0);
+    const avgPodScore = Math.round(podScores.reduce((a, b) => a + b, 0) / podScores.length);
     
     return {
       total: patents.length,
       compared: compared.length,
-      cpcMatchRate: Math.round((cpcMatches / compared.length) * 100),
+      avgCpcScore,
+      avgPodScore,
     };
   }
 
@@ -304,8 +307,12 @@ function getStatus(patent) {
               <div style={{ fontSize: '12px', color: '#666' }}>Patents Compared</div>
             </div>
             <div>
-              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0369a1' }}>{getAggregateStats().cpcMatchRate}%</div>
-              <div style={{ fontSize: '12px', color: '#666' }}>CPC Primary Match</div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0369a1' }}>{getAggregateStats().avgCpcScore}%</div>
+              <div style={{ fontSize: '12px', color: '#666' }}>Avg CPC Score</div>
+            </div>
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#0369a1' }}>{getAggregateStats().avgPodScore}%</div>
+              <div style={{ fontSize: '12px', color: '#666' }}>Avg POD Score</div>
             </div>
           </div>
           <button
