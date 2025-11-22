@@ -9,6 +9,7 @@ export default function ValidationPage() {
   const [editingSpec, setEditingSpec] = useState(null); // patent object being edited
   const [editSpecText, setEditSpecText] = useState('');
   const [savingSpec, setSavingSpec] = useState(false);
+  const [comparingPatent, setComparingPatent] = useState(null);
 
   useEffect(() => {
     loadPatents();
@@ -195,7 +196,8 @@ export default function ValidationPage() {
     }
   }
   
-  function getStatus(patent) {
+function getStatus(patent) {
+    if (patent.hunt_extracted_pods) return '✅ Ready to Compare';
     if (patent.hunt_application_id) return '✅ Sent to Hunt';
     if (patent.ground_truth_claims) return '✅ GT Extracted';
     if (patent.drawing_pdf_url) return '✅ Drawings Ready';
@@ -353,13 +355,21 @@ export default function ValidationPage() {
                     {processing[patent.id] ? '⏳' : '📋 Extract GT'}
                   </button>
                 )}
-                {patent.ground_truth_claims && !patent.hunt_application_id && (
+               {patent.ground_truth_claims && !patent.hunt_application_id && (
                   <button 
                     onClick={() => sendToHunt(patent.id)}
                     disabled={processing[patent.id]}
                     style={{ padding: '4px 8px' }}
                   >
                     {processing[patent.id] ? '⏳' : '→ Hunt'}
+                  </button>
+                )}
+                {patent.hunt_extracted_pods && (
+                  <button 
+                    onClick={() => setComparingPatent(patent)}
+                    style={{ padding: '4px 8px', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '4px' }}
+                  >
+                    📊 Compare
                   </button>
                 )}
                 <button 
@@ -387,6 +397,78 @@ export default function ValidationPage() {
           <strong>Note:</strong> Headers are cropped (~0.76 inches from top) to remove patent numbers from drawings.
         </p>
       </div>
+        {comparingPatent && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+          overflow: 'auto',
+          padding: '20px'
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            width: '95%',
+            maxWidth: '1200px',
+            maxHeight: '90vh',
+            overflow: 'auto'
+          }}>
+            <div style={{ padding: '16px', borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, backgroundColor: 'white' }}>
+              <h2 style={{ margin: 0 }}>Compare: {comparingPatent.patent_number}</h2>
+              <button
+                onClick={() => setComparingPatent(null)}
+                style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+            <div style={{ padding: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginBottom: '24px' }}>
+                <div style={{ backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1px solid #86efac' }}>
+                  <h3 style={{ margin: '0 0 12px 0', color: '#166534' }}>Ground Truth CPC</h3>
+                  <p style={{ margin: '0 0 4px 0' }}><strong>Primary:</strong> {comparingPatent.ground_truth_cpc?.primary || 'None'}</p>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#666' }}><strong>All:</strong> {comparingPatent.ground_truth_cpc?.all?.join(', ') || 'None'}</p>
+                </div>
+                <div style={{ backgroundColor: '#eff6ff', padding: '16px', borderRadius: '8px', border: '1px solid #93c5fd' }}>
+                  <h3 style={{ margin: '0 0 12px 0', color: '#1e40af' }}>Hunt Predicted CPC</h3>
+                  <p style={{ margin: '0 0 4px 0' }}><strong>Primary:</strong> {comparingPatent.hunt_predicted_cpc?.primary || 'None'}</p>
+                  <p style={{ margin: 0, fontSize: '13px', color: '#666' }}><strong>All:</strong> {comparingPatent.hunt_predicted_cpc?.all?.join(', ') || 'None'}</p>
+                  {comparingPatent.ground_truth_cpc?.primary === comparingPatent.hunt_predicted_cpc?.primary && (
+                    <p style={{ margin: '8px 0 0 0', color: '#059669', fontWeight: 'bold' }}>✅ Primary CPC Match!</p>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
+                <div style={{ backgroundColor: '#f0fdf4', padding: '16px', borderRadius: '8px', border: '1px solid #86efac' }}>
+                  <h3 style={{ margin: '0 0 12px 0', color: '#166534' }}>Ground Truth Claims ({comparingPatent.ground_truth_claims?.independent?.length || 0})</h3>
+                  {comparingPatent.ground_truth_claims?.independent?.map((claim, i) => (
+                    <div key={i} style={{ marginBottom: '12px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontSize: '13px' }}>
+                      {claim.substring(0, 300)}{claim.length > 300 ? '...' : ''}
+                    </div>
+                  )) || <p style={{ color: '#666' }}>No claims</p>}
+                </div>
+                <div style={{ backgroundColor: '#eff6ff', padding: '16px', borderRadius: '8px', border: '1px solid #93c5fd' }}>
+                  <h3 style={{ margin: '0 0 12px 0', color: '#1e40af' }}>Hunt Extracted PODs ({comparingPatent.hunt_extracted_pods?.length || 0})</h3>
+                  {comparingPatent.hunt_extracted_pods?.map((pod, i) => (
+                    <div key={i} style={{ marginBottom: '12px', padding: '8px', backgroundColor: 'white', borderRadius: '4px', fontSize: '13px' }}>
+                      {pod.isPrimary && <span style={{ backgroundColor: '#dbeafe', padding: '2px 6px', borderRadius: '4px', fontSize: '11px', marginRight: '8px' }}>Primary</span>}
+                      {pod.text}
+                    </div>
+                  )) || <p style={{ color: '#666' }}>No PODs</p>}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      
          {editingSpec && (
         <div style={{
           position: 'fixed',
