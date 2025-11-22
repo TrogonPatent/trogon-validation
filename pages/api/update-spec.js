@@ -1,67 +1,75 @@
-{editingSpec && (
-        <div style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          backgroundColor: 'rgba(0,0,0,0.5)',
-          display: 'flex',
-          justifyContent: 'center',
-          alignItems: 'center',
-          zIndex: 1000
-        }}>
-          <div style={{
-            backgroundColor: 'white',
-            borderRadius: '8px',
-            width: '90%',
-            maxWidth: '900px',
-            maxHeight: '90vh',
-            display: 'flex',
-            flexDirection: 'column'
-          }}>
-            <div style={{ padding: '16px', borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h2 style={{ margin: 0 }}>Edit Spec: {editingSpec.patent_number}</h2>
-              <button
-                onClick={() => { setEditingSpec(null); setEditSpecText(''); }}
-                style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}
-              >
-                ×
-              </button>
-            </div>
-            <textarea
-              value={editSpecText}
-              onChange={(e) => setEditSpecText(e.target.value)}
-              style={{
-                flex: 1,
-                margin: '16px',
-                padding: '12px',
-                fontFamily: 'monospace',
-                fontSize: '13px',
-                border: '1px solid #ccc',
-                borderRadius: '4px',
-                resize: 'none',
-                minHeight: '400px'
-              }}
-            />
-            <div style={{ padding: '16px', borderTop: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <span style={{ color: '#666', fontSize: '13px' }}>{editSpecText.length.toLocaleString()} characters</span>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  onClick={() => { setEditingSpec(null); setEditSpecText(''); }}
-                  style={{ padding: '8px 16px', cursor: 'pointer' }}
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={saveSpec}
-                  disabled={savingSpec}
-                  style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
-                >
-                  {savingSpec ? 'Saving...' : 'Save'}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+import { put } from '@vercel/blob';
+import { neon } from '@neondatabase/serverless';
+
+export const config = {
+  api: {
+    bodyParser: {
+      sizeLimit: '4mb',
+    },
+  },
+};
+
+export default async function handler(req, res) {
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method not allowed' });
+  }
+
+  try {
+    const { patentId, specText } = req.body;
+
+    if (!patentId || !specText) {
+      return res.status(400).json({ error: 'Patent ID and spec text required' });
+    }
+
+    const sql = neon(process.env.DATABASE_URL);
+
+    // Get patent info
+    const patents = await sql`
+      SELECT id, patent_number, spec_txt_url
+      FROM patents
+      WHERE id = ${patentId}
+    `;
+
+    if (patents.length === 0) {
+      return res.status(404).json({ error: 'Patent not found' });
+    }
+
+    const patent = patents[0];
+
+    // Upload new spec to blob (overwrites by using same path pattern)
+    const blob = await put(
+      `patents/specs/${patent.patent_number}-spec.txt`,
+      specText,
+      {
+        access: 'public',
+        contentType: 'text/plain',
+        token: process.env.BLOB_READ_WRITE_TOKEN,
+      }
+    );
+
+    // Update database with new URL
+    await sql`
+      UPDATE patents
+      SET 
+        spec_txt_url = ${blob.url},
+        updated_at = NOW()
+      WHERE id = ${patentId}
+    `;
+
+    console.log(`Spec updated for ${patent.patent_number}: ${specText.length} chars`);
+
+    return res.status(200).json({
+      success: true,
+      patentNumber: patent.patent_number,
+      specUrl: blob.url,
+      charCount: specText.length,
+    });
+
+  } catch (error) {
+    console.error('Error updating spec:', error);
+    return res.status(500).json({
+      error: 'Failed to update spec',
+      details: error.message,
+    });
+  }
+}
