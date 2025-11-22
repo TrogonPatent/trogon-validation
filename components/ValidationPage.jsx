@@ -198,32 +198,22 @@ export default function ValidationPage() {
     }
   }
 
-async function openComparison(patent) {
-    setComparingPatent(patent);
-    setComparisonScores(null);
-    setScoring(true);
+const scores = { cpcScore, podScore, scoredAt: new Date().toISOString() };
     
-    try {
-      const res = await fetch('/api/score-comparison', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gtClaims: patent.ground_truth_claims,
-          gtCpc: patent.ground_truth_cpc,
-          huntPods: patent.hunt_extracted_pods,
-          huntCpc: patent.hunt_predicted_cpc,
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
-        setComparisonScores(data);
-      }
-    } catch (error) {
-      console.error('Scoring error:', error);
-    } finally {
-      setScoring(false);
+    // Save to DB
+    if (patentId) {
+      await sql`
+        UPDATE patents
+        SET comparison_scores = ${JSON.stringify(scores)},
+            updated_at = NOW()
+        WHERE id = ${patentId}
+      `;
     }
-  }
+
+    return res.status(200).json({
+      success: true,
+      ...scores,
+    });
 
   function getAggregateStats() {
     const compared = patents.filter(p => p.hunt_extracted_pods && p.ground_truth_claims);
