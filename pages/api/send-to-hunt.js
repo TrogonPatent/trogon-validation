@@ -129,7 +129,7 @@ async function sendToHuntAPI(specUrl, drawingsUrl) {
     console.log('Save response:', JSON.stringify(saveData, null, 2));
   }
   
-  return { id: applicationId, ...uploadData };
+  return { id: applicationId, classifyData, ...uploadData };
 }
 
 export default async function handler(req, res) {
@@ -174,15 +174,15 @@ export default async function handler(req, res) {
     );
 
 // Extract PODs and CPC from classify response
-    const huntPods = classifyData?.pods?.map(pod => ({
+    const huntPods = huntData.classifyData?.pods?.map(pod => ({
       text: pod.pod_text,
       rationale: pod.rationale,
       isPrimary: pod.is_primary
     })) || [];
     
     const huntCpc = {
-      primary: classifyData?.primaryCpc || null,
-      all: classifyData?.cpcPredictions?.map(p => p.code) || []
+      primary: huntData.classifyData?.primaryCpc || null,
+      all: huntData.classifyData?.cpcPredictions?.map(p => p.code) || []
     };
 
     await sql`
