@@ -498,7 +498,9 @@ function getStatus(patent) {
           <li><strong>Process</strong> - Extracts spec text (no claims), shows total page count</li>
           <li><strong>Select Drawing Pages</strong> - Enter page range, click ✂️ to extract with headers cropped</li>
           <li><strong>Extract GT</strong> - Parses independent claims and CPC codes from original PDF</li>
-          <li><strong>Send to Hunt</strong> - Uploads spec.txt + drawings.pdf with anonymous filenames</li>
+          <li><strong>Send to Hunt</strong> - Uploads spec.txt + drawings.pdf, returns PODs + CPC predictions</li>
+          <li><strong>Compare</strong> - Scores Hunt predictions against ground truth (CPC match + POD coverage)</li>
+          <li><strong>View</strong> - Review cached validation results</li>
         </ol>
         <p style={{ margin: 0, color: '#666' }}>
           <strong>Note:</strong> Headers are cropped (~0.76 inches from top) to remove patent numbers from drawings.
