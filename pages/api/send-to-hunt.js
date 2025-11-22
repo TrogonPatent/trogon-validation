@@ -173,10 +173,24 @@ export default async function handler(req, res) {
       patent.drawing_pdf_url
     );
 
+// Extract PODs and CPC from classify response
+    const huntPods = classifyData?.pods?.map(pod => ({
+      text: pod.pod_text,
+      rationale: pod.rationale,
+      isPrimary: pod.is_primary
+    })) || [];
+    
+    const huntCpc = {
+      primary: classifyData?.primaryCpc || null,
+      all: classifyData?.cpcPredictions?.map(p => p.code) || []
+    };
+
     await sql`
       UPDATE patents
       SET 
         hunt_application_id = ${huntData.id || null},
+        hunt_predicted_cpc = ${JSON.stringify(huntCpc)},
+        hunt_extracted_pods = ${JSON.stringify(huntPods)},
         updated_at = NOW()
       WHERE id = ${patentId}
     `;
