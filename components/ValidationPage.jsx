@@ -274,6 +274,7 @@ async function openComparison(patent) {
   }
   
 function getStatus(patent) {
+    if (patent.comparison_scores) return '✅ Validated';
     if (patent.hunt_extracted_pods) return '✅ Ready to Compare';
     if (patent.hunt_application_id) return '✅ Sent to Hunt';
     if (patent.ground_truth_claims) return '✅ GT Extracted';
@@ -462,12 +463,20 @@ function getStatus(patent) {
                     {processing[patent.id] ? '⏳' : '→ Hunt'}
                   </button>
                 )}
-                {patent.hunt_extracted_pods && (
+                {patent.hunt_extracted_pods && !patent.comparison_scores && (
                   <button 
                     onClick={() => openComparison(patent)}
                     style={{ padding: '4px 8px', backgroundColor: '#059669', color: 'white', border: 'none', borderRadius: '4px' }}
                   >
                     📊 Compare
+                  </button>
+                )}
+                {patent.comparison_scores && (
+                  <button 
+                    onClick={() => { setComparingPatent(patent); setComparisonScores(patent.comparison_scores); }}
+                    style={{ padding: '4px 8px', backgroundColor: '#6366f1', color: 'white', border: 'none', borderRadius: '4px' }}
+                  >
+                    👁️ View
                   </button>
                 )}
                 <button 
