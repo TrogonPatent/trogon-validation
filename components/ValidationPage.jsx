@@ -6,6 +6,9 @@ export default function ValidationPage() {
   const [selectedFiles, setSelectedFiles] = useState([]);
   const [pageRanges, setPageRanges] = useState({});
   const [processing, setProcessing] = useState({});
+  const [editingSpec, setEditingSpec] = useState(null); // patent object being edited
+  const [editSpecText, setEditSpecText] = useState('');
+  const [savingSpec, setSavingSpec] = useState(false);
 
   useEffect(() => {
     loadPatents();
@@ -156,6 +159,42 @@ export default function ValidationPage() {
     }));
   }
 
+  async function openSpecEditor(patent) {
+    try {
+      const res = await fetch(patent.spec_txt_url);
+      const text = await res.text();
+      setEditSpecText(text);
+      setEditingSpec(patent);
+    } catch (error) {
+      alert('Failed to load spec: ' + error.message);
+    }
+  }
+
+  async function saveSpec() {
+    if (!editingSpec) return;
+    setSavingSpec(true);
+    try {
+      const res = await fetch('/api/update-spec', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patentId: editingSpec.id,
+          specText: editSpecText,
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || data.details);
+      alert('Spec saved!');
+      setEditingSpec(null);
+      setEditSpecText('');
+      await loadPatents();
+    } catch (error) {
+      alert('Save failed: ' + error.message);
+    } finally {
+      setSavingSpec(false);
+    }
+  }
+  
   function getStatus(patent) {
     if (patent.hunt_application_id) return '✅ Sent to Hunt';
     if (patent.ground_truth_claims) return '✅ GT Extracted';
@@ -227,7 +266,15 @@ export default function ValidationPage() {
               <td style={{ textAlign: 'center' }}>{patent.total_page_count || '—'}</td>
               <td>
                 {patent.spec_txt_url ? (
-                  <a href={patent.spec_txt_url} target="_blank" rel="noopener noreferrer">View</a>
+                  <span style={{ display: 'flex', gap: '8px' }}>
+                    <a href={patent.spec_txt_url} target="_blank" rel="noopener noreferrer">View</a>
+                    <button
+                      onClick={() => openSpecEditor(patent)}
+                      style={{ padding: '2px 6px', fontSize: '11px', cursor: 'pointer' }}
+                    >
+                      ✏️ Edit
+                    </button>
+                  </span>
                 ) : '—'}
               </td>
               <td>
@@ -340,6 +387,73 @@ export default function ValidationPage() {
           <strong>Note:</strong> Headers are cropped (~0.76 inches from top) to remove patent numbers from drawings.
         </p>
       </div>
+         {editingSpec && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000
+        }}>
+          <div style={{
+            backgroundColor: 'white',
+            borderRadius: '8px',
+            width: '90%',
+            maxWidth: '900px',
+            maxHeight: '90vh',
+            display: 'flex',
+            flexDirection: 'column'
+          }}>
+            <div style={{ padding: '16px', borderBottom: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0 }}>Edit Spec: {editingSpec.patent_number}</h2>
+              <button
+                onClick={() => { setEditingSpec(null); setEditSpecText(''); }}
+                style={{ background: 'none', border: 'none', fontSize: '24px', cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+            <textarea
+              value={editSpecText}
+              onChange={(e) => setEditSpecText(e.target.value)}
+              style={{
+                flex: 1,
+                margin: '16px',
+                padding: '12px',
+                fontFamily: 'monospace',
+                fontSize: '13px',
+                border: '1px solid #ccc',
+                borderRadius: '4px',
+                resize: 'none',
+                minHeight: '400px'
+              }}
+            />
+            <div style={{ padding: '16px', borderTop: '1px solid #ccc', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ color: '#666', fontSize: '13px' }}>{editSpecText.length.toLocaleString()} characters</span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  onClick={() => { setEditingSpec(null); setEditSpecText(''); }}
+                  style={{ padding: '8px 16px', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={saveSpec}
+                  disabled={savingSpec}
+                  style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                >
+                  {savingSpec ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}   
     </div>
   );
 }
