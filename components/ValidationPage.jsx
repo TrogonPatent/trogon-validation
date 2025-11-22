@@ -198,22 +198,43 @@ export default function ValidationPage() {
     }
   }
 
-const scores = { cpcScore, podScore, scoredAt: new Date().toISOString() };
+async function openComparison(patent) {
+    setComparingPatent(patent);
     
-    // Save to DB
-    if (patentId) {
-      await sql`
-        UPDATE patents
-        SET comparison_scores = ${JSON.stringify(scores)},
-            updated_at = NOW()
-        WHERE id = ${patentId}
-      `;
+    // If already scored, use cached scores
+    if (patent.comparison_scores) {
+      setComparisonScores(patent.comparison_scores);
+      setScoring(false);
+      return;
     }
-
-    return res.status(200).json({
-      success: true,
-      ...scores,
-    });
+    
+    setComparisonScores(null);
+    setScoring(true);
+    
+    try {
+      const res = await fetch('/api/score-comparison', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          patentId: patent.id,
+          gtClaims: patent.ground_truth_claims,
+          gtCpc: patent.ground_truth_cpc,
+          huntPods: patent.hunt_extracted_pods,
+          huntCpc: patent.hunt_predicted_cpc,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setComparisonScores(data);
+        patent.comparison_scores = data;
+        await loadPatents();
+      }
+    } catch (error) {
+      console.error('Scoring error:', error);
+    } finally {
+      setScoring(false);
+    }
+  }
 
   function getAggregateStats() {
     const compared = patents.filter(p => p.hunt_extracted_pods && p.ground_truth_claims);
